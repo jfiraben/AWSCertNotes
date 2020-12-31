@@ -2705,3 +2705,1177 @@
 	• Global Accelerator doesn't cache
 
 # Advanced VPC Networking
+### VPC Flow Logs
+	• VPC FLow logs is a feature allowing the monitoring of traffic flow to and from interfaces within a VPC
+	• VPC Flow logs can be added at a VPC, Subnet or Interface level.
+	• Flow Logs DON'T monitor packet contents ... that requires a packet sniffer.
+	• Flow Logs can be stored on S3 or CloudWatch Logs
+	• https://docs.aws.amazon.com/vpc/latest/userguide/flow-logs-s3.html
+	• https://docs.aws.amazon.com/vpc/latest/userguide/flow-logs-cwl.html
+	• Capture packet Metadata
+		○ NOT PACKET CONTENTS
+		○ I.e. Source/Destination IP Address/Ports
+	• Applied to a:
+		○ VPC - All interfaces in that VPC
+		○ Subnet - interfaces in that subnet
+		○ Interface directly
+	• VPC Flow Logs are NOT realtime
+		○ Can't rely on Flow Logs to provide realtime telemetry on network packet flow
+	• Destination can be S3 or CloudWatch Logs
+		○ Each come with different tradeoffs
+	• RDS can use VPC Flow Logs
+	• 0 for port is protocol that doesn't use port numbers
+		○ Ex. ICMP
+	• Protocol within Flow Logs:
+		○ ICMP = 1
+		○ TCP = 6
+		○ UDP = 17
+	• If security group, then generally only 1 line with show in the flow log
+	• If you see two flow log entries (one that accepts and one that rejects), it generally is an interaction between security group and network ACLs
+	• Not all traffic is recorded in Flow Logs
+		○ Communication with the metadata IP: 169.254.169.254
+		○ AWS Time Synchronization server: 169.254.169.123
+		○ DHCP
+		○ Amazon DNS Server
+		○ Amazon Windows License server not recorded
+	
+### Egress-Only Internet Gateway
+	• Internet gateway which only allows connections to be initiated from inside a VPC to outside the VPC
+	• With IPv4 addresses are private or public
+	• Private instances cannot communicate directly with the public internet or AWS public services
+	• Public instances can communicate to the public internet and can be communicated with from the public internet
+	• NAT allows private IPs to access public networks without allowing externally initiated connections (IN)
+		○ Doesn't allow any connections from the internet to be initiated to the private instance
+	• With IPv6, ALL IPs are public
+	• Internet Gateway (IPv6) allows all IPs IN and OUT
+	• NAT isn't usable with IPv6
+	• Egress-Only is outbound-only for IPv6
+		○ Things cannot initiate connections in
+	• Egress-Only Gateway is Highly Available (HA) by default across all AZs in the region
+		○ Scales as required
+	• Architecture is exactly the same as the IGW
+	• Default IPv6 Route ::/0 added to Route Table with eigw-id as target
+	• Only allows outgoing connections AND their response
+	
+### VPC Endpoints (Gateway)
+	• Gateway endpoints are a type of VPC endpoint which allow access to S3 and DynamoDB without using public addressing.
+	• Gateway endpoints add 'prefix lists' to route table, allowing the VPC router to direct traffic flow to the public services via the gateway endpoint.
+	• Provide private access to supported resources (currently S3 and DynamoDB)
+		○ Allow private-only resource inside a vpc or ANY resource inside a private-only VPC to access S3 and DynamoDB
+	• Prefix List added to route table -> Gateway Endpoint
+		○ Prefix list uses gateway endpoint as a target
+	• Highly Available (HA) across all AZs in a region by default
+	• Is a VPC endpoint object
+	• Does not go into a particular subnet
+	• Endpoint policy is used to control what it can access
+	• Can only be used to access services in the same region
+		○ Can't access cross-region services
+	• Support two main use-cases:
+		○ Private VPC to allow public resources (S3 or DynamoDB)
+		○ Private-only S3 Buckets
+			§ Prevent Leaky Buckets - S3 buckets can be set to private only by allowing access ONLY from a gateway endpoint
+	• Limitation: Only accessible from inside that specific VPC
+		○ Logical gateway object and can only access logical gateways from within that VPC
+	• Gateway endpoints are HA by design
+	• Region resilient by default
+	• Gateway endpoints are not accessible outside of the VPC they're associated with
+	• Endpoint policies can be used to control what the endpoint can be used to access
+	
+### VPC Endpoints (Interface)
+	• Interface endpoints are used to allow private IP addressing to access public AWS services.
+	• S3 and DynamoDB are handled by gateway endpoints - other supported services are handled by interface endpoints.
+	• Unlike gateway endpoints - interface endpoints are not highly available by default - they are normal VPC network interfaces and should be placed 1 per AZ to ensure full HA.
+	• Provide private access to AWS public services
+		○ Anything NOT S3 and DynamoDB
+	• Added to specific subnets - an ENI - not HA
+	• For HA, add one endpoint, to one subnet, per AZ used in the VPC
+		○ 2 AZ require 2 interface endpoint
+		○ 3 AZ require 3 interface endpoint
+		○ So on
+	• Network access controlled via Security Groups
+	• Endpoint policies - restrict what can be done with the endpoint
+	• TCP and IPv4 ONLY
+	• Interface endpoints use PrivateLink
+		○ Allow external services to be injected into your VPC 
+			§ From AWS or third parties
+		○ Given network interfaces inside your VPC subnet
+		○ Useful for heavily regulated industry but also want to allow third-party resources inside the VPC
+	• Primarily use DNS
+	• Endpoint provides a NEW service endpoint DNS
+		○ e.g. vpce-12-xyz.sns.us-east-1.vpce.amazonaws.com
+	• Endpoint Regional DNS
+		○ Single DNS name that works with whatever AZ you're using the access the endpoint
+	• Endpoint Zonal DNS
+		○ Resolves to that one specific interface in that one specific AZ
+	• Applications can optionally use these two (endpoint regional DNS or endpoint zonal DNS) or PrivateDNS overrides the default DNS for services
+		○ Associates a route53 private hosted zone with your VPC
+		○ Carries a replacement DNS record for the default service DNS name
+	• Interface Endpoint can access the private services without a public IP address. Has direct access
+	• Private DNS associates a private route53 hosted zone to the VPC changing the default service DNS to resolve to the interface endpoint IP
+	• Gateway endpoints work using prefix lists and route tables
+		○ Never require changes to the applications
+		○ Application thinks its communicating directly with S3 or DynamoDB
+		○ Instead of going via the IGW and requiring public IP addresses, it goes via an endpoint gateway and can use private IP addressing
+		○ HA by design
+	• Interface endpoint uses DNS and a private IP address for the interface endpoint
+		○ Can use endpoint specific DNS names or enable private DNS which overrides the default and allows unmodified applications to access the services using the interface endpoint
+		○ Doesn't use routing but rather DNS
+		○ Not HA
+	
+### VPC Peering
+	• Direct encrypted network link between two VPCs
+		○ ONLY TWO
+	• Works same/cross-region and same/cross-account
+	• (optional) Public Hostnames resolve to private IPs
+	• Same region security groups can reference peer security groups
+		○ Only works with VPC peers inside the same regions
+		○ If in same region, you can reference SGs logically
+	• VPC Peering does NOT support transitive peering
+		○ VPC A peered with VPC B which is peered with VPC C
+			§ VPC A IS NOT peered with VPC C
+		○ ONLY PEERED BETWEEN TWO VPCs
+		○ Can't route through interconnected VPCs
+	• Creating a logical gateway object inside both VPCs
+	• Routing Configuration is needed
+		○ Security Groups and Network ACLs (NACLs) can filter
+	• Route tables at both sides of the peering connection are needed, directing traffic flow for the remote CIDR at the peer gateway object
+	• VPC Peering connections cannot be created where there is overlap in the VPC CIDRs
+		○ Ideally NEVER use the same address ranges in multiple VPCs
+	• Communication is encrypted and transits over the AWS global network when using cross-region peering connections
+	
+# Hybrid Environments and Migration
+### Border Gateway Protocol
+	• Routing protocol used to control how data flows and arrives at destination
+	• Autonomous Systems (AS)
+		○ Routers controlled by one entity
+		○ A network in BGP
+		○ Blackboxes that only concern themselves with network routing in/out of the autonomous system
+	• Autonomous System Number (ASN) are unique and allocated by IANA (0-65535)
+		○ 64512-65534 are private and utilized in private peering arrangements without being officially allocated
+		○ The rest are public ASN directly allocated by IANA
+	• BGP operates over TCP using port 179
+		○ It's reliable
+	• Not automatic
+		○ Peering is manually configured
+	• BGP is a path-vector protocol
+		○ It exchanges the best path to a destination between peers
+		○ The path is called the ASPATH
+		○ Doesn’t take into account link speed or conditions
+	• iBGP
+		○ Internal BGP
+		○ Routing WITHIN an autonomous system (AS)
+	• eBGP
+		○ External BGP
+		○ Routing BETWEEN autonomous system (AS)
+	• i is the origin
+		○ The network was learned from a locally connected network
+	• BGP exchanges the shortest ASPATH between peers
+	• AS Path Prepending can be used to artificially make the satellite path look longer making the fiber path preferred
+	• An Autonomous System (AS) will advertise all the shortest paths it knows to all its peers, the AS prepends its own AS number onto the path
+		○ This creates a source to destination path which BGP routers can learn and propogate
+		
+### AWS Site-to-Site VPN
+	• AWS Site-to-Site VPN is a hardware VPN solution which creates a highly available IPSEC VPN between an AWS VPN and external network such as on-premises traditional networks. VPNs are quick to setup vs direct connect, don't offer the same high performance, but do encrypt data in transit. This lesson details the architecture and key concepts you need to be aware of for the exam.
+	• Offer quickest way to create a link between an AWS environment and something that's not an AWS environment (on-prem)
+	• A logical connection between a VPC and on-premises network encrypted using IPSec, running over the public internet
+	• Full HA - if you design and implement it correctly
+	• Quick to provision
+		○ Less than an hour
+		○ In contrast to the long provision times for direct connect
+	• Virtual Private Gateway (VPW)
+		○ Can be the target on route tables
+		○ Associated with a single VPC
+	• Customer Gateway (CGW)
+		○ Can refer to two different things:
+			§ Logical piece of configuration within AWS
+			§ Physical on-premises router that the VPN connects to
+		○ Either logical or physical
+	• VPN connection between the VGW and CGW
+		○ How we create the network virtual connection between two locations
+	• Need IP range of VPC and the on-prem it'll be connecting to
+		○ Also need IP Address of the router on-prem
+		○ Can create a Virtual Private Gateway (VGW) and attach to AWS Public Zone
+		○ Then create a VPN connection (Static or dynamic) within AWS
+			§ Needs to be linked to a VGW to use the endpoints that the VGW provides
+			§ Also need to create the CGW
+	• VGW is highly available by design
+	• 
+		○ If the customer on-prem router, then everything fails
+			§ Why it's not completely HA
+		○ Known as "Partial HA"
+			§ HA on the AWS but suffers from single point of failure on the on-prem side
+		○ On-prem using multiple internet connections (ideally in different buildings)
+	• Static vs Dynamic VPN (BGP)
+		○ Dynamic VPN uses BGP
+		○ The difference is how routes are configurated
+		○ Static VPN:
+			§ is simple and just uses IPSec
+			§ Works almost anywhere
+			§ No load balancing and multi connection failover
+			§ Routes for remote side added to route tables as static routes
+			§ Networks for remote side statically configured on the VPN connection
+		○ Dynamic VPN:
+			§ Border Gateway Protocol (BGP) is configured on both the customer and AWS side using (ASN)
+			§ Networks are exchanged via BGP
+			§ Multiple VPN connections provide HA and traffic distribution
+			§ Can communicate the state of the links between the Virtual Private Gateway (VGW) and the Customer Gateway (CGW)
+			§ Routes for remote side added to route tables as static routes
+			§ Route propagation (if enabled) means routes are added to route tables automatically
+	• VPN Considerations:
+		○ Speed limitations
+			§ 1.25 Gbps
+			§ AWS limit
+			§ Need to check restrictions on customer router as well
+		○ Latency Considerations
+			§ Inconsistent, public internet
+		○ Cost
+			§ AWS hourly cost
+			§ GB out cost
+			§ Data cap (on-premises)
+		○ Speed of setup
+			§ Hours
+			§ All software configuration
+		○ Can be used as a backup for a Direct Connect (DX)
+		○ Can be used with Direct Connect (DX)
+
+### Direct Connect (DX)
+	• A 1 Gbps or 10 Gbps Network Port into AWS
+	• At a DX Location (1000-Base-LX or 10GBASE-LR)
+		○ 1 Gbps = 1000-Base-LX
+		○ 10 Gbps = 10GBASE-LR
+		○ Both use Single-mode fiber optic cables
+	• You're applying to connect your equipment to the AWS port
+		○ Called a cross-connect
+		○ Cable from the AWS DX rack and port allocated to you and your customer router (located inside the DX location)
+	• Goes to your Customer Router
+		○ Requires VLANS and BGP
+	• Or goes to a Partner Router (if extending to your location)
+	• Need to arrange for a port to plug into that DX location and for that to be transmitted into your business premises
+		○ Can take some time
+	• Basic DX product provides just a port and you provide the rest
+		○ Cable from the DX port all the way to your network
+	• Can run Multiple Virtual Interfaces (VIFS) over one DX
+		○ Each VIFS is a VLAN and BGP connection
+		○ Come in two different types:
+			§ Private VIF (VPC) associated with a virtual private gateway and connect into a single VPC
+				□ Provide private network connectivity between a VPC and your on-premises network
+				□ Can have as many private VIFS running over a single DX connection
+			§ Public VIF (Public Zone Services)
+				□ Provide connectivity to AWS public zone services (S3, DynamoDB, etc)
+	• One physical cable between the customer/partner router and the router located on-prem
+		○ No High Availability
+		○ No encryption
+			§ Not supported by default with DX product but can be added
+	• Can take Weeks/Months for physical cable installation from customer/partner router and on-prem
+	• Public VIF = Public AWS Services
+		○ NO Public Internet
+	• Private VIF = One VPC
+		○ Multiple VPCs - you can create multiple Private VIFs
+			§ Only provide to the VPC they're connected to
+	• DX is more complex than VPN = provides low consistent latency and high speeds
+	• DX Considerations:
+		○ Takes much longer to provision vs VPN
+		○ DX Port provisioning is quick but the cross-connect (between AWS port and customer router) takes longer
+			§ Human has to do this
+			§ Question that requests DX to be setup in one day is probably a faulty question
+		○ Extension from DX location to on-prem is a physical cable run and can take weeks/months
+		○ Use VPN first…then replace with DX (or leave as backup)
+		○ Faster than site-to-site VPN
+			§ Up to 40 Gbps with Aggregation
+				□ 4 10 Gbps ports
+		○ Doesn't use public internet for transit
+			§ Low consistent latency
+			§ Doesn't use business bandwidth
+		○ Direct Connect (DX) provides no built-in encryption (Native)
+			§ Completely unencrypted
+			§ Things running over the top can be encrypted
+				□ Can be managed on a per-application basis unless you apply workarounds
+	• Application themselves might encrypt the data before or in-transit
+	• When you create a Virtual Private Gateway, it creates endpoints located inside the AWS Public Zone with public IP addresses
+		○ Can create a VPN and instead of using the public internet as the transit network, you can use the Public VIF running over the direct connect
+			§ IPSec VPN over a public VIF
+			§ The benefits of DX with the encryption of IPSec
+	
+### Transit Gateway (TGW)
+	• Network Transit Hub to connect VPCs to on premises networks
+	• Significantly reduces network complexity
+	• Single network object
+		○ HA
+		○ Scalable
+	• Attachments created to other network types
+		○ How it connects to on-prem
+		○ VPC, Site-to-Site VPN, and Direct Connect (DX) Gateway attachments
+	• Full mesh network without Transit Gateway scales badly
+		○ The more sites or VPNs, the faster the growth in connections to manage
+		○ Complex with lots of admin overhead
+	• Transit gateway uses a site-to-site VPN attachment
+		○ Becomes the AWS side termination point for the VPN
+	• With TGW, you can create attachments to VPC
+		○ VPC attachments are configured with a subnet in each AZ where service is required
+		○ One single TGW can route traffic between lots of different VPCs
+		○ Is a transitive routing capable device
+		○ VPCs talk to each other through the TGW
+	• Can peer TGW with other TGW in other accounts in other regions
+		○ Peering attachment
+		○ Cross-region
+		○ Same/Cross-account
+	• Can attach TGW to Direct Connect gateways
+		○ TGW can integrate with direct connect gateway using a transit VIF
+			§ Allows to use the TGW with physical connections on-prem
+	• TGW supports multiple route tables allowing complex routing architectures
+	• Transit Gateway Considerations:
+		○ Supports transitive routing
+			§ Don't need to create full mesh topology
+		○ Can be used to create global networks
+			§ Can peer different transit gateways
+		○ Share between accounts using AWS Resource Access Manager (RAM)
+			§ Allows to share products/service (or components of them) between AWS accounts
+		○ Peer with different regions in the same or cross-account
+		○ Offers much less complexity in terms of network architectures than without transit gateways
+
+### Storage Gateway
+	• Storage Gateway is a super flexible hybrid storage appliance.
+	• Its capable of running in 3 modes
+		○ FILE
+		○ TAPE
+		○ VOLUME (Stored or Cached).
+	• Understanding the features of each, and when to use those features is a key part of any hybrid infrastructure questions in the exam.
+	• Hybrid Storage Virtual Appliance (On-Premises)
+		○ Can be run inside AWS as part of certain disaster recovery scenarios
+	• Let's you extend your storage into AWS
+		○ Extension of File and Volume storage into AWS
+			§ Volume = Block storage delivered over iSCSI
+	• Allows you to keep volume storage hosted locally but have data replicated into AWS
+		○ Volume storage backups into AWS
+	• Migrate existing tape backups into AWS
+		○ Can present AWS storage to backup software as a physical tape
+	• Migration of existing infrastructure to AWS
+	• Storage Gateway:
+		○ Extension, migration, and backups
+	• Runs in three main modes (must decide when creating):
+		○ Tape Gateway (VTL = virtual tape library) Mode:
+			§ Configures storage gateway so that backup servers think it's physical tape
+			§ Virtual tapes stored on S3 and Glacier
+		○ File Mode
+			§ Create file shares and offer them using SMB and NFS
+			§ File Storage backed by S3 Objects
+			§ Great way to extend data center into AWS
+		○ Volume Mode (Gateway Cache/Stored) - iSCSI
+			§ Block storage backed by S3 and EBS Snapshots
+	• File Gateway:
+		○ Files are stored to shares using NFS or SMB
+		○ Communicates with On-Premises to AWS using HTTPS and public endpoint
+		○ Mapped directly 1:1 as S3 objects
+		○ Lifecycle policies can automatically control Storage Classes
+		○ SMB shares can integrate with Active Directory for file authorization
+		○ Use if you need additional capacity or if you're decommissioning on-prem storage infrastructure
+	• Tape Gateway:
+		○ Storage Gateway is pretending to be a real tape backup system
+			§ Pretends to be a iSCSI tape library, changer, and drive
+		○ Connects back to AWS using HTPS and public endpoint
+		○ Active tapes are stored in S3
+		○ Archived/exported tapes are stored in VTS in Glacier
+		○ Virtual tape from 100 GiB to 5 TiB
+		○ 1 PB total storage across 1500 virtual tapes
+		○ Unlimited VTS (Archive) Storage in AWS
+		○ Wouldn't implement as a new solution
+	• Volume Gateway (Stored)
+		○ Storage gateway running locally on-prem
+		○ 16 TB per volume, 32 Volumes (MAX), 512 TB total capacity
+		○ Primary data is stored on-premises
+		○ Backup Data is asynchronously replicated to AWS
+		○ Block storage presented to AWS using iSCSI
+		○ Connects back to AWS using HTPS and public endpoint
+		○ Volumes are made available via iSCSI for network based servers to access (single connection per volume unless servers are clustered)
+		○ AWS side creates EBS snapshots from backup data. Can be used to create standard EBS volumes. Ideal for migrations to AWS
+		○ Can be accessed the same as normal EBS snapshots
+		○ Used for disaster recovery or business continuity
+		○ For Migrations and Disaster Recovery
+		○ Not useful for data center extensions
+	• Volume Gateway (Cached)
+		○ Designed for extensions into AWS
+			§ Capacity is limited or looking to decommission existing infrastructure
+		○ Volumes are made available via iSCSI for network based servers to access (single connection per volume unless servers are clustered)
+		○ Primary data is stored in AWS. Data which is accessed frequently is cached locally. Ideal for extended storage into AWS
+		○ Primary data is stored on a S3-backed volume (AWS managed bucket) snapshots are stored as standard EBS snapshots
+		○ Not storing primary copy of data locally (stored in AWS)
+			§ Locally is used ONLY for frequently accessed data
+		○ Connects back to AWS using HTPS and public endpoint
+		○ 32 TB per volume, 32 Volumes (MAX), 1 PB total capacity
+	• If you need to replace tape backup system = Tape Gateway
+	• If you need to store files and transferred into S3 = File Gateway
+	• If your application use Block storage (volumes):
+		○ Stored
+			§ Keep volumes locally but asynchronously backup to AWS
+		○ Cached
+			§ Extend into AWS while minimizing local infrastructure footprint
+
+### Snowball / Edge / Snowmobile
+	• Snowball, Snowball Edge and Snowmobile are three parts of the same product family designed to allow the physical transfer of data between business locations and AWS.
+	• Knowing which to pick and why is essential for the solutions architect exam .. in this lesson I step through all of the key product family features.
+	• Designed to move large amounts of data IN and OUT of AWS
+	• Physical storage unit:
+		○ Suitcase size or Truck size
+	• Ordered from AWS empty, load up, return
+	• Ordered from AWS with data, empty, return
+	• For the exam know which to use
+	• Snowball:
+		○ Ordered from AWS, Log a Job, Device Delivered (not instant)
+		○ Data encryption uses KMS
+		○ 50 TB or 80 TB capacity
+		○ Connect to the snowball using either 1 Gbps (RJ45 1GBase-TX) or 10 Gbps (LR/SR) network
+			§ Must have that physical cable network connectivity on-prem
+		○ 10 TB to 10 PB economical range (multiple devices)
+			§ Can order multiple devices
+		○ Multiple devices can be sent to multiple premises
+		○ ONLY STORAGE (no compute capability)
+		○ Snowball is older and purely for storage
+	• Snowball Edge:
+		○ Both Storage and Compute
+			§ Like snowball but comes with compute capability
+		○ Larger capacity vs Snowball
+		○ 10 Gbps (RJ45), 10/25 (SFP), 45/50/100 Gbps (QSFP+)
+		○ Storage Optimized (with EC2)
+			§ 80 TB, 24 vCPU, 32 GiB RAM, 1 TB SSD (local)
+		○ Compute Optimized
+			§ 100 TB + 7.68 NVME, 52 vCPU, and 208 GiB RAM
+		○ Compute with GPU
+			§ Same as compute optimized but with GPU
+			§ Good for scientific analysis, modeling, parallel processing
+		○ Ideal for remote sites or where data processing on ingestion is needed
+		○ Turnaround time can be quicker
+	• Snowmobile
+		○ Portable Data Center (DC) within a shipping container on a truck
+			§ Literally a truck
+		○ Special order
+		○ Not available in high volume and not available everywhere
+		○ Ideal for single location when 10 PB+ is required
+		○ Up to 100 PB per snowmobile
+		○ Expected to connect to data center grade computing
+		○ Single Truck (not economical for smaller than 10 PB or for multi-site migrations)
+		
+### Directory Services
+	• The Directory service is a product which provides managed directory service instances within AWS
+	• It functions in three modes
+		○ Simple AD - An implementation of Samba 4 (compatibility with basics AD functions)
+		○ AWS Managed Microsoft AD - An actual Microsoft AD DS Implementation
+		○ AD Connector which proxies requests back to an on-premises directory.
+	• This lesson steps through the architecture of the service and explains scenarios where each might be used.
+	• Directory
+		○ Stores objects (e.g. Users, Groups, Computers, Servers, File Shares) with a structure (domain/tree)
+		○ Multiple trees can be grouped into a forest
+		○ Commonly used in Windows Environments
+		○ Sign-in to multiple devices with the same username/password provides centralized management for assets
+		○ Microsoft Active Directory Domain Services (AD DS)
+		○ AD DS most popular, open-source alternative = SAMBA
+			§ Designed to provide an alternative but only provides partial compatibility with Active Directory
+	• Directory Service
+		○ AWS Managed implementation
+		○ No admin overhead of running your directory service
+		○ Runs within a VPC (Private Service)
+			§ Services that use it need to be within that VPC or private connectivity must be configured
+		○ Provides HA by deploying into multiple subnets into multiple AZs within AWS
+		○ Some AWS Services NEED a directory
+			§ e.g. Amazon Workspaces
+				□ Needs a directory registered with AWS
+		○ Can be an isolated directory
+			§ Inside AWS only and independent of any other directory
+		○ Can be integrated with existing on-prem system
+		○ Or act as a 'proxy' back to on-premises
+			§ Allows you to use your existing on-prem directory with AWS services that require a registered directory service
+	• Simple AD Mode:
+		○ Open source directory based on SAMBA 4
+		○ Provide directory with enough compatibility with AD but in a lightweight way
+		○ Anything mentioning open-source/Samba then Simple AD
+		○ Up to 500 Users (Small) or 5,000 users (Large)
+		○ Integrates with AWS Services
+			§ EC2 Instances can join SimpleAD and Workspaces can use it for logins and management
+			§ Ex. Chime, Connect, QuickSight, RDS, Workdocs, Workmail, Workspaces
+		○ Basically deploying a highly available version of Samba
+		○ Not designed to integrate with any existing on-premises directory system such as Microsoft AD
+	• AWS Managed Microsoft AD:
+		○ When you want to have a direct presence inside AWS but also have an existing on-prem environment
+		○ Can create a trust relationship with the existing on-prem network
+			§ Must be connected with a private connection (Direct Connect or VPN)
+		○ Benefit:
+			§ Primary running location is in AWS
+			§ Trust relationships can be created between AWS and on-prem directory systems
+			§ Resilient if the VPN fails
+				□ Services in AWS will still be able to access the local directory running in Directory Service
+		○ Not reliant on any on-prem infrastructure
+		○ Full Microsoft AD DS running in 2012 R2 Mode
+			§ Microsoft AD aware applications running in AWS
+		○ Supports applications which require MS AD specific Schema or Schema Updates
+		○ Questions about requiring an actual implementation of MS AD with trust relationships with MS AD, then this is the mode you need to use
+	• AD Connector
+		○ Need to establish private network connectivity between AWS and on-prem
+		○ Only a proxy
+		○ Allows AWS services which NEED a directory to use an existing on-prem directory
+		○ ONLY A PROXY
+			§ No local functionality
+		○ Primary Directory is located on-premises requests from AWS are proxied back to the existing directory
+		○ Don't need to provision an additional directory service to use AWS products and services
+		○ If private connectivity fails, then the AD proxy won't function - interrupting service at the AWS side
+		○ Use only when you already have a directory on-prem and just want to use AWS service which require a directory but you don't want to deploy a new one
+	• When to pick between different modes:
+		○ Simple AD
+			§ The default. Simple requirements. A directory in AWS
+		○ Microsoft AD
+			§ Applications in AWS which need MS AD DS, or you need to TRUST AD DS
+			§ Actually an implementation of MS AD. Not emulated.
+		○ AD Connector
+			§ Use AWS Services which need a directory without storing any directory info in the cloud
+			§ Proxy to your on-prem directory
+			§ Doesn't provide functionality on its own
+			
+### DataSync
+	• AWS DataSync is a product which can orchestrate the movement of large scale data (amounts or files) from on-premises NAS/NAS into AWS or vice-versa
+	• Data Transfer service TO and FROM AWS
+	• Tends to be used for workloads like Migrations into AWS, Data Processing Transfers, Archival/Cost Effective Storage, or Disaster Recover/Business Continuity
+	• Designed to work at huge scale
+	• Each agent can handle 10 Gbps of data transfer
+	• Each job can handle up to 50 million files
+	• Keeps metadata (e.g. permissions/timestamps)
+	• Bult in data validation
+	• Key Features:
+		○ Scalable
+			§ 10 Gbps per agent (~100 TB per day)
+		○ Bandwidth Limiters
+			§ Avoid link saturation
+		○ Incremental and Scheduled transfer options
+		○ Compression and encryption
+		○ Automatic recovery from transit errors
+		○ AWS Service Integration - S3, EFS, FSx
+			§ Supports service to service transfers and cross-region
+		○ Pay as you use
+			§ Per GB cost for data moved
+	• The DataSync Agent runs on a virtualization platform such as VMWare and communicates with the AWS DataSync Endpoint
+		○ Runs on-prem
+	• DataSync Agent communicates with the SAN/NAS Storage using NFS or SMB protocols
+	• Agent communicates with DataSync Endpoint running on AWS
+		○ Uses Encryption in-transit (TLS)
+	• Locations define the SRC or DST for the sync of data TO or FROM AWS
+		○ e.g. S3, EFS, FSx, NFS, SMB
+	• Schedules can be set to ensure the transfer of data occurs during or avoiding specific time periods
+	• Customer impact can be minimized by setting a bandwidth limit in MiB/s
+	• Must have DataSync agent installed locally in on-prem
+		○ Communicates with SAN/NAS storage using NFS/SMB
+	• Can recover from failures and use schedules
+	• Can throttle bandwidth
+	• Any questions requiring reliable transfer of large quantities of data, needs to integrate with EFS/FSx/S3 and support bidirectional/incremental/scheduled transfer, then it's likely to be AWS DataSync
+	• Task = A 'job' within DataSync
+		○ Defines what is being synced, how quickly, FROM where, and TO where
+	• Agent = software used to read or write to on-premises data stores using NFS or SMB
+	• Location = Every task has two locations FROM and TO
+		○ e.g. Network File Systems (NFS), Server Message Block (SMB), Amazon EFS, Amazon FSx, and Amazon S3
+			§ Tend to use NFS with Linux/Unix
+			§ SMB popular in Windows environments
+	• If you need an electronic method of data transfer, then snowball/snowball edge are not appropriate
+	• If you need to transfer data in/out of AWS, and the product needs to support schedules/throttling/automatic retries/compression and cope with huge scale transfers involving lots of different AWS and traditional file transfer protocols = DataSync
+	
+### FSx for Windows File Servers
+	• FSx for Windows Servers provides a native windows file system as a service which can be used within AWS, or from on-premises environments via VPN or Direct Connect
+	• FSx is an advanced shared file system accessible over SMB, and integrates with Active Directory (either managed, or self-hosted).
+	• It provides advanced features such as VSS, Data de-duplication, backups, encryption at rest and forced encryption in transit.
+	• Fully managed native windows file servers/shares
+	• Designed for integration with windows environments
+		○ Not an emulated file server
+	• Integrates with Directory Service or Self-Managed AD
+		○ Critical for enterprises that already have their own AD service
+	• Can be deployed in either Single or Multi-AZ within a VPC
+	• On-Demand and Scheduled Backups
+	• Accessible using VPC, Peering, VPN, Direct Connect (DX)
+	• Questions talking about shared file systems that mention Windows keywords (native windows file systems, active directory/directory service integration) then FSx for Windows File Servers
+	• Need to determine when to use FSx or EFS
+		○ EFS tends to be used for shared file systems for Linux EC2 Instances and on-prem
+		○ FSx dedicated for Windows environments
+	• FSx uses Active Directory for its user store
+		○ Supports managed or self-managed AD (on-prem)
+			§ Can integrate with both
+		○ Can integrate with a completely normal implementation of AD that most enterprises already have on-prem
+	• Can be shared using the typical windows implementation
+		○ \\fs-xxx123.animals4life.org\catpics
+	• FSx is a native windows file system
+		○ Supports de-duplication (sub file), distributed file system (DFS), KMS at-rest encryption, and enforced encryption in-transit
+			§ DFS = windows can group file systems together and scale out for a more managed file share structure at-scale
+		○ Shares are accessed using SMB protocol
+		○ Support volume shadow copies (file level versioning)
+			§ Way that users can see multiple file versions and initiate restores from the client side
+	• FSx is highly performant
+		○ 8MB/s up to 2GB/s
+		○ 100k's IOPS
+		○ <1ms latency
+	• Key Features and Benefits:
+		○ VSS = User-Driven Restores
+			§ Feature that allows users to perform file/folder-level restores
+			§ Any users of workspaces that use files/folders on FSx shares, they can view and restore previous versions without having to work with System Admin
+		○ Native file system accessible over SMB
+			§ EFS uses the NFS protocol
+				□ Only accessible from Linux EC2 Instances or Linux On-Prem Servers
+			§ If SMB is mentioned, it's most likely FSx
+		○ Windows permission model
+		○ Supports DFS
+			§ Scale-out file share structure
+			§ Group file-shares together or use DFS for file replication to scale out performance
+		○ Managed
+			§ No file server admin
+			§ No admin overhead of managing file server yourself
+		○ Integrates with Directory Service AND your own directory
+		
+### FSx for Lustre
+	• FSx for Lustre is a managed file system which uses the FSx product designed for high performance computing
+	• It delivers extreme performance for scenarios such as Big Data, Machine Learning and Financial Modeling
+	• https://docs.aws.amazon.com/fsx/latest/LustreGuide/performance.html#fsx-aggregate-perf
+	• Managed Lustre - Designed for High Performance Computing (HPC)
+		○ Supports Linux based instances running in AWS
+		○ Supports POSIX style permissions for file systems
+	• Typically used for machine learning, big data, financial modeling
+	• Can scale to 100s GB/s throughput and sub millisecond latency
+	• Lustre = One AZ Only
+	• Can be provisioned using two performance types:
+		○ Scratch
+			§ Highly optimized for Short Term
+			§ No replication
+			§ Fast
+		○ Persistent
+			§ Longer term
+			§ High availability (ON ONE AZ ONLY)
+			§ Self-Healing
+				□ Any hardware fails as part of the file system, it's automatically replaced by AWS
+	• Accessible over VPN or Direct Connect
+	• Focuses around a managed file system created by the user
+		○ Can access from the VPC or anything connected to it with private networking
+	• Data is 'Lazy Loaded' from S3 (S3 Linked Repository) into the file system as it's needed
+		○ Only truly present in the file system when they're first accessed
+		○ No synchronization
+		○ Data can be exported back to S3 at any point using hsm_archive command
+		○ The separate file system is where the processing of data occurs
+	• Lustre splits data up when it's storing it to disks
+	• Metadata stored on Metadata Targets (MST)
+	• Objects are stored on object storage targets known as OSTs
+		○ Each is 1.17 TiB in size
+	• Baseline performance based on size of file system
+		○ Size - min 1.2 TiB then increments of 2.4 TiB
+	• For Scratch - Base 200 MB/s per TiB of storage
+	• Persistent offers 50MB/s, 100MB/s, and 200MB/s per TiB of storage
+	• Both scratch and persistent can burst up to 1,300 MB/s per TiB
+		○ Based on credit system
+		○ Each credits when using a performance level below the baseline and use it when you go above the baseline
+	• Any writes to Lustre goes through the ENI and directly to disk
+		○ Depends on the throughput and IOPS
+	• Any reads from disk is based on performance characteristics (disk throughput and IOPS)
+	• Any reads from cache depends on the network throughput and IOPS
+	• Scratch is designed for pure performance
+		○ Short-term or temporary workload
+		○ Doesn't provide HA or Replication
+		○ Any hardware failure will result in data being lost and not available to the file system
+		○ Larger file systems means more servers, more disks, and more chance of failure
+	• Persistent has replication within ONE AZ ONLY
+		○ Protects against a hardware failure but not against a failure of an AZ
+		○ Auto-heals when hardware failure occurs within one AZ
+	• You can backup to S3 with both scratch and persistent
+		○ Manual or automatic (0-35 day retention)
+	• If you see Windows or SMB mentioned, then it's going to be FSx for Windows and not FSx for Lustre
+	• If you see any mention of Lustre, really high-end performance requirements, POSIX, High performance computing, machine learning, big data, or any of these types of scenarios then it's going to be FSx for Lustre
+	
+# Security, Deployment, and Operations
+### AWS Secrets Manager
+	• AWS Secrets manager is a product which can manage secrets within AWS. There is some overlap between it and the SSM Parameter Store - but Secrets manager is specialised for secrets.
+	• Additionally Secrets managed is capable of automatic credential rotation using Lambda.
+	• For supported services it can even adjust the credentials of the service itself.
+	• Inside Parameter Store, you can create secure strings which allow you to store passwords = NOT SECRETS MANAGER
+	• Secrets Manager shares functionality with Parameter Store
+	• Designed specifically for secrets:
+		○ Passwords and API Keys
+	• Usable from the Console, CLI, API, or SDK's (integration)
+		○ Integrated with other applications
+	• Supports automatic rotation of secrets using Lambda
+	• Directly integrates with some AWS products (RDS)
+	• Lambda is invoked periodically to rotate secrets
+		○ Products such as RDS are kept in sync
+		○ This is what sets Secrets Manager apart from Parameter Store
+			§ Parameter store cannot rotate secrets
+	• Secrets are stored using KMS
+		○ Ensures role separation
+			§ Need permissions to both KMS and Secrets Manager
+	• If question mentions anything like secrets and/or rotation (or even RDS), then it's most likely Secrets Manager
+	• If question mentions storing hierarchical configuration information, configuration of Cloudwatch agent then it typically means Parameter Store
+	
+### AWS WAF and Shield
+	• AWS Shield and Web Application Firewall (WAF) are both products which provide perimeter defence for AWS networks.
+	• Shield provides DDOS protection and WAF is a Layer 7 Application Firewall.
+	• https://www.cloudflare.com/en-au/learning/ddos/what-is-a-ddos-attack/
+	• Web Application Firewall (WAF)
+	• AWS Shield:
+		○ Provides AWS resources with Distributed Denial of Service (DDoS) protection
+		○ Comes in two versions:
+			§ Standard - free with Route53 and CloudFront
+				□ Protection against Layer 3 and Layer 4 DDoS attacks
+			§ Advanced - $3,000 per month
+				□ Protects EC2, ELB, CloudFront, Global Accelerator, and Route 53
+				□ Provides access to 24/7 365 advanced DDoS Response Team and Financial Insurance
+	• Web Application Firewall (WAF):
+		○ Application Layer 7 (HTTP/S) Firewall
+		○ Protects against complex Layer 7 attacks/exploits
+			§ SQL Injections, Cross-site scripting, Geo Blocks, Rate Awareness
+		○ Web Access Control List (WebACL) integrated with ALB, API Gateway, and CloudFront
+		○ Rules are added to a WebACL and evaluated when traffic arrives
+		○ Functions at the edge and can be integrated with ALB, API Gateway, and CloudFront
+	• WAF Rules are defined, included in a WebACL which is associated to a CloudFront distribution and deployed to the edge. The WebACL filters traffic at the edge
+	• AWS Shield provides Layer 3 and 4 DDoS protection for the ALB, CloudFront, and on requests via Route53
+	• DDoS = Shield
+	• Layer 7 filtering, HTTP filtering, HTTPS filter = WAF
+	• Both provide global perimeter protection
+	
+### CloudHSM
+	• In this lesson I step through the architecture and features of CloudHSM - an AWS provided Hardware Security Module products.
+	• CloudHSM is required to achieve compliance with certain security standards such as FIPS 140-2 Level 3
+	• https://en.wikipedia.org/wiki/FIPS_140-2
+	• Similar to KMS
+		○ Creates, manages, and secures cryptographic material (keys)
+	• With Key Management Service (KMS)… AWS Manage…Shared but separate
+		○ Shared service that is used by other accounts within AWS uses = bad
+	• Hardware Security Module = used by KMS in order to manage keys and perform cryptographic operations
+	• CloudHSM = true "single tenant" hardware security module (HSM)
+	• CloudHSM = AWS provisioned but fully customer managed
+	• Standard for cryptographic modules = Federal Information Processing Standard Publication 140-2
+		○ Can determine capability of any HSM modules based on compliance with this
+	• CloudHSM = Full FIPS 140-2 Level 3 (KMS is L2 Overall, some L3)
+	• Exam question that requires 140-2 Level 3, then have to use CloudHSM or on-prem HSM device
+	• KMS uses AWS standard APIs
+	• CloudHSM accessed with Industry Standard APIs
+		○ PKCS#11, Java Cryptography Extensions (JCE), Microsoft CryptoNG (CNG) libraries
+	• KMS can use CloudHSM as a custom key store
+		○ CloudHSM integration with KMS
+	• Deployed into an AWS managed CloudHSM VPC that the user doesn't have any visibility to
+	• HSMs keep keys and policies in sync when nodes are added/removed
+	• HSMs operate in an AWS managed HSM VPC. Interfaces are added to customer VPC
+	• AWS Provision HSM but have no access to secure area where key material is held
+	• AWS CloudHSM Client located in customer VPC and connects to CloudHSM VPC
+	• CloudHSM Use Cases:
+		○ No Native AWS integration
+			§ No S3 SSE
+		○ Offload the SSL/TLS processing for Web Servers
+			§ Much more economical/efficient to have CloudHSM device performing those cryptographic services
+		○ Enable Transparent Data Encryption (TDE) for Oracle Databases
+		○ Protect the Private Keys for an Issuing Certificate Authority (CA)
+	• For anything that's not specific to AWS, then CloudHSM is ideal
+		○ Anything that uses standards or has to integrate into AWS
+	
+# NoSQL Databases and DynamoDB
+### DynamoDB - Architecture
+	• DynamoDB is a NoSQL fully managed Database-as-a-Service (DBaaS) product available within AWS.
+	• NoSQL Public Database-as-a-Service (DBaaS)
+		○ Capable of handling simple key/value data or data with a structure like DocumentDB model
+		○ Accessible anywhere with access to the public endpoints of DynamoDB
+		○ Wide-column key/value
+	• No self-managed servers or infrastructure
+	• Manual/Automatic provisioned performance IN/OUT or On-Demand
+		○ On-demand mode = true as-a-service model
+	• Highly Resilient
+		○ Across AZs and optionally globally resilient
+	• Data replicated across multiple storage nodes by default
+	• Really Fast
+		○ Single-digit milliseconds (SSD Based)
+	• Backups, point-in-time recovery, encryption at rest
+	• Event-Driven integration
+		○ Do things when data changes
+	• Tables:
+		○ A Table is a grouping of ITEMS with the same PRIMARY KEY
+		○ Item = row in traditional database product
+		○ Table can have an infinite number of items
+		○ Primary Key (PK):
+			§ Simple (Partition)
+			§ Composite (Partition and Sort Key (SK))
+		○ Each item MUST have a unique value for PK and SK
+			§ Can have none, all, mixture, or different attributes (DDB has no rigid attribute schema)
+		○ ITEM MAX = 400 KB
+		○ On-Demand capacity model
+			§ Don't have to set explicit values for capacity on a table
+			§ Pay for operations against the DDB table
+		○ Provisioned Capacity
+			§ Explicitly set the capacity values on a per-table basis
+		○ Capacity (Speed) is set on a table
+			§ (Writes) 1 WCU = 1KB per second
+			§ (Reads) 1 RCU = 4KB per second
+	• Backups:
+		○ On-Demand Backups
+			§ Full backup of the table retained until you manually remove that backup
+			§ Can restore to same region or cross-region
+			§ Can use backup to store with or without indexes
+			§ Can adjust encryption settings as part of the restore
+			§ You're responsible for performing and removing backups
+		○ Point-in-time Recovery (PITR)
+			§ Enabled on a table-by-table basis and NOT ENABLED BY DEFAULT
+			§ Continuous record of changes allows replay to any point in the window
+			§ 35 day recovery window
+				□ Can restore to a new table with a 1 second granularity
+	• Any questions mentioning NoSQL then preference DynamoDB in the exam
+	• Any questions mentioning relational data then generally NOT DynamoDB
+		○ DDB should not be used to implement any relational database system
+		○ Not designed for that and doesn't include required features
+	• Any questions mentioning Key/Value then preference DynamoDB in the exam
+	• Access via console, CLI, or API… DON'T HAVE SQL WHEN USING DDB
+		○ Any questions mentioning SQL, then it probably excludes DDB
+	• Billed based on RCU, WCU, Storage, and Features
+		○ True On-Demand DB product
+		○ Pay only for resources you consume
+		○ Can purchase reserved allocations for capacity
+
+### DynamoDB - Operations, Consistency, and Performance
+	• On-Demand Capacity Mode:
+		○ Designed when you have an unknown or unpredictable level of load on a DDB table
+		○ Or when you have priority for as little admin overhead as possible
+		○ Don't need to explicitly set capacity settings
+		○ Pay price per million of read or write units (RCU/WCU)
+			§ Price you pay can be as much as 5x provisioned capacity
+	• Provisioned Capacity Mode:
+		○ RCU and WCU set on a per table basis
+	• Every operation consumes at least 1RCU/WCU
+		○ 1 RCU is 1 x 4KB read operation per second
+		○ 1 WCU is 1 x 1KB write operation per second
+	• Every table has a RCU and WCU burst pool (300 seconds)
+	• Types of Operations:
+		○ Query
+			§ Retrieve data from the product
+			§ Start with Partition Key 
+			§ Query accepts a single PK value and optionally a scan key (SK) or range
+			§ Capacity consumed is the size of all returned items
+			§ Further filtering discards data - capacity is still consumed
+			§ Can ONLY query on PK or PK and SK
+			§ Always more efficient to return multiple items in a single operation
+			§ Every operation consumes at least 1 RCU
+			§ Generally operating an entirety of the item
+			§ Anything you're filtering on an item will not be returned but you will still be charged for the entire item
+			§ Query operation can only ever query based on a particular PK value
+		○ Scan
+			§ Least efficient operation but most flexible
+			§ SCAN moves through a table consuming the capacity of every ITEM
+			§ You have complete control an what data is selected, any attributes can be used, and any filters applied
+			§ BUT SCAN consumes capacity for every ITEM scanned through
+			§ Scans through entire table
+				□ Consumes all the data that you scan through
+	• Two consistency modes:
+		○ Eventually consistent reads:
+			§ Eventually consistent reads check 1 of the storage nodes at random
+			§ Could be unlucky with stale data if a node is checked before replication completes
+			§ 50% of the cost vs strongly consistent
+			§ Not every application or access type can tolerate eventual consistency
+		○ Strongly (immediately) consistent reads:
+			§ More costly and scales less well than eventually consistent
+			§ Strongly consistent reads connect to the leader node to get the most up-to-date copy of data
+		○ Consistency = when new data is written to the database and immediately read, is that read data immediately the same as what was uploaded or eventually the same
+		○ Leader Storage Node:
+			§ If leader ever fails, election happens and a new is chosen
+		○ DynamoDB directs writes at the leader storage node which is elected from the storage nodes
+		○ The leader node replicates data to other nodes, typically finishing within a few milliseconds
+	• WCU Calculation:
+		○ If you need to store 10 ITEMS per second…2.5KB average size per ITEM
+		○ Calculate WCU per item…Round Up (ITEM Size / 1KB) = 3
+		○ Multiply by average number per second (30)
+		○ = WCU Required (30)
+	• RCU Calculation:
+		○ If you need to retrieve 10 ITEMS per second…2.5KB average size
+		○ Calculate RCU per ITEM…Round Up (ITEM Size / 4KB) = 1
+		○ Multiply by average number per second (10)
+		○ = Strongly Consistent RCU Required (10)
+		○ (50% of strongly consistent) = Eventually Consistent RCU Required (5)
+	
+### DyanmoDB - Streams and Lambda Triggers
+	• DynamoDB Streams are a 24 hour rolling window of time ordered changes to ITEMS in a DynamoDB table
+	• Streams have to be enabled on a per table basis , and have 4 view types:
+		○ KEYS_ONLY
+			§ Stream will only record the partition key and optionally any applicable sort key value for the item that is changed
+			§ Up to stream to determine what has changed
+		○ NEW_IMAGE
+			§ Stores the entire ITEM with the state as it was after the change
+		○ OLD_IMAGE
+			§ Store copy of data before the change
+		○ NEW_AND_OLD_IMAGES
+			§ Actual entry in the stream stores both the pre/post change of that item
+			§ If inserting/deleting, the old/new images will be empty
+	• Lambda can be integrated to provide trigger functionality - invoking when new entries are added on the stream.
+	• Stream = Time ordered list of ITEM CHANGES in a table
+		○ 24-hour rolling window
+		○ Uses Kinesis streams
+		○ Enabled on a per table basis
+		○ Records INSERTS, UPDATES, DELETES
+		○ Different view types influence what is in the stream
+	• View types works as well with inserted/deleted items
+	• Database Triggers:
+		○ Allow for actions to take place in the event of a change in data
+		○ ITEM changes generate an event
+		○ That event contains the data which changed
+		○ An action is taken using that data
+		○ AWS = Streams AND Lambda
+		○ Use Lambda to perform a compute operation in response to a data change that caused a stream event
+		○ Streams and Triggers good for Reporting and Analytics scenarios
+			§ Also good for data aggregation, messaging, or notifications
+	• Use Streams and Triggers together to implement a Trigger Architecture in DynamoDB
+	
+### DynamoDB Local (LSI) and Global Secondary Indexes (GSI)
+	• Local Secondary Indexes (LSI) and Global Secondary Indexes (GSI) allow for an alternative presentation of data stored in a base table.
+	• LSI allow for alternative SK's whereas with GSIs you can use alternative PK and SK.
+	• Query is the most efficient operation in DDB
+	• Query can only work on 1 PK value at a time and optionally a single or range of Sort Key values
+	• Indexes are alternative views on table data
+	• Local Secondary Index (LSI) allows you to create a view using a different Sort Key (SK)
+	• Global Secondary Index (GSI) allows you to create a view using a different Partition Key (PK) and Sort Key (SK)
+	• When creating the indexes, you can choose which attributes from the base table are projected into them
+		○ Some or all attributes (Projection)
+	• LSI:
+		○ Alternative view on base table data
+			§ Allow for alternative sort key for the data in the main tables
+			§ Same partition key
+		○ Must be created with the base table itself
+		○ Cannot add LSI after the base table has been created
+		○ Max of 5 LSIs per base table
+		○ Alternative SK on the table
+		○ Shares the RCU and WCU with the table
+		○ Attributes - ALL, KEYS_ONLY, and INCLUDE
+		○ LSIs are an alternative view on the base table data using the same PK and a different SK
+		○ Indexes are sparse
+			§ Only items which have a value in the index alternative sort key are added to the index
+		○ Uses same PK
+	• GSI:
+		○ Can be created at any time
+		○ Default limit of 20 per base table
+		○ Can define a different PK and SK
+		○ Have their own RCU and WCU allocations
+		○ Attributes - ALL, KEYS_ONLY, and INCLUDE
+		○ GSIs are an alternative view on the base table with alternative PK and SK
+			§ They have their own RCU and WCU and can be created at any time
+		○ GSIs are sparse
+			§ Only ITEMS which have values in the new PK and optional SK are added
+		○ GSIs are always eventually consistent
+			§ Replication between base and GSI is Asynchronous
+	• Careful with projection (KEYS_ONLY, INCLUDE, ALL)
+	• Queries on attributes NOT projected are expensive
+	• Use GSIs as default and LSI only when strong consistency is required
+	• Use indexes for alternative access patterns
+
+### DynamoDB - Global Tables
+	• DynamoDB Global Tables provides multi-master global replication of DynamoDB tables which can be used for performance, HA or DR/BC reasons
+	• Global tables provides multi-master cross-region replication
+	• Tables are created in multiple regions and added to the same global table (becoming replica tables)
+	• Last writer wins is used for conflict resolution
+		○ Simple
+		○ Generates predictable outcomes
+		○ DynamoDB picks the most recent write and replicates that to all the other replica tables that are part of the global table
+	• Reads and Writes can occur to any region
+	• Generally sub-second replication between regions
+	• Strongly consistent reads ONLY in the same region as writes
+		○ Anything else, it's always eventual consistency
+	• Replication is generally sub-second and depends on the load of each of the regions
+	• Global eventual consistency
+	• Same-region eventual or strongly consistent
+	• Multi-master replication
+		○ All regions can be used for both read and write operations
+	• Provides Global HA and Global Disaster Recovery (DR)/Business Continuity (BC)
+	• Last writer wins conflict resolution
+	
+### DynamoDB - Accelerator (DAX)
+	• DynamoDB Accelerator (DAX) is an in-memory cache designed specifically for DynamoDB. It should be your default choice for any DynamoDB caching related questions.
+	• Traditional Cache:
+		○ Application checks cache for data - a CACHE MISS occurs if data isn't cached
+		○ Data is loaded from the database with a separate operation and SDK
+		○ Cache is updated with retrieved data. Subsequent queries will load data from cache as a CACHE HIT
+		○ Problem = lack of integration between cache and DB
+	• DAX:
+		○ Application uses the DAX SDK and makes a single call for the data which is returned by DAX
+		○ DAX either returns the data from its cache or retrieves it from the database and then caches it
+		○ Less complexity for the app developer - tighter integration
+		○ Designed for DDB
+	• Operates from within a VPC and designed to be deployed into multiple AZs in that VPC
+	• DAX = cluster service
+		○ Nodes placed in different AZs
+		○ Primary and replica nodes
+	• Maintains two different caches:
+		○ Item cache holds results of (Batch) GetItem
+			§ Operates on single items
+			§ Must specify items partition key and if present, the sort key
+		○ Query cache holds data based on query/scan parameters
+			§ Stores the parameters used in that query/scan
+	• DAX is accessed via an endpoint
+		○ Cache HITS are returned in microseconds
+		○ Misses are returned in milliseconds
+	• When writing, DAX can use write-through caching
+		○ Write-through is supported
+		○ Data is written to DDB then DAX
+	• If a CACHE MISS occurs, data is also written to the primary node of the cluster
+	• Primary Node supports write operations
+	• Replicas support read operations
+	• Nodes are HA
+		○ Primary failure results in an election
+			§ New primary node is determined
+	• DAX = In-memory cache
+		○ Allows for much faster read operations and reduced costs
+	• Can either scale UP or scale OUT
+		○ UP = BIGGER INSTANCES
+		○ OUT = MORE INSTANCES
+	• Supports write-through
+	• DAX deployed within a VPC
+		○ Any application using DAX will need to be deployed in that VPC
+	• Choosing between DAX and something else hinges on how much admin overhead you want
+	• If applications require strongly consistent reads then DAX will not be suitable
+	• If applications is write heavy and very infrequently uses read operations then DAX may not be suitable
+	
+### Amazon Athena
+	• Amazon Athena is serverless querying service which allows for ad-hoc questions where billing is based on the amount of data consumed.
+	• Athena is an underrated service capable of working with unstructured, semi-structured or structured data.
+	• Serverless Interactive Querying Service
+	• Can take data, store it in S3, and perform Ad-Hoc queries on that data
+		○ Pay only data consumed while running the query and the storage used
+	• Schema-On-Read (table-like translation)
+		○ Original data is never changed and remains on S3 in original form
+		○ Schema translates data as it's read into a table-like structure that you define in advanced
+			§ Schema translates data => relational-like when read
+	• ETL = Extract, Transform, Load
+		○ Not required in Athena
+	• Output can be sent to other services
+		○ Visualizations, analysis, etc
+	• Architecture
+		○ Source data stored on S3
+			§ Read Only
+			§ Supports standard formats of structured, semi-structured, and unstructured data
+			§ Source data is stored on S3
+			§ Athena can directly read many AWS data formats such as CloudTrail, ELB Logs, and Flow Logs
+			§ Fixed and does not change
+		○ Inside the product, you create a schema
+			§ Used at the time of querying
+		○ Inside the schema, you define tables
+			§ Define how to get from the format of the original source data to a table structure
+			§ Tables are defined in advance in a data catalog and data is projected through when read
+			§ It allows SQL-like queries on data without transforming source data
+		○ Output can be sent to visualization tools
+		○ No base/constant cost
+		○ Billed based on data consumed during query
+	• Any questions talking about data being stored inside S3, data is structure/semi-structured/unstructured, and you need to perform Ad-Hoc queries where you're charged for perfoming those queries = Athena most likely
+	• Planet OSM
+		○ Provides an open set of data maintained and delivered as a set of large data files
+			§ Not structured into tables
+	• Schema-on-read
+		○ 'Tables' are defined in-advance and as data is read through
+		○ It's transformed on the fly into that table structure
+		○ The original data is unchanged
+		
+### Elasticache
+	• Elasticache is a managed in-memory cache which provides a managed implementation of the redis or memcached engines.
+	• It's useful for read heavy workloads, scaling reads in a cost effective way and allowing for externally hosted user session state.
+	• https://aws.amazon.com/elasticache/pricing/
+	• In-memory database for applications with high performance requirements
+	• Managed Redis and Memcached engines
+		○ Delivered as-a-service
+	• Can be used to cache data for READ HEAVY workloads with low latency requirements
+	• Reduces database workloads (expensive)
+	• Can be used to store Session Data (Stateless Servers)
+	• Requires application code changes
+		○ Application needs to understand a caching architecture
+		○ Needs to know to look for cache
+		○ Needs to write data and understand cache invalidation
+	• An in-memory cache allows cost effective scaling of read-heavy workloads and performance improvements at scale
+	• Session State Data:
+		○ Session data is written and kept updated using Elasticache
+		○ If an instance fails, the user connection is moved to another instance by the load balancer
+			§ Session State loaded from cache
+			§ Session continues with no interruption
+	• Two Engines used by Elasticache:
+		○ Memcached:
+			§ Supports simple data structures only:
+				□ String
+			§ No replication
+			§ Multiple Nodes (Sharding)
+			§ No backups
+			§ Multi-threaded by design
+				□ Can take better advantage of multi-core CPUs
+				□ Better performance when using multi-core CPUs
+		○ Redis:
+			§ Supports advanced structures:
+				□ Lists, sets, sorted sets, hashes, bit arrays, and more
+			§ Supports replication of data across multiple AZs
+				□ HA by design and can be used to scale reads by using replicas
+			§ Replication (Scale Reads)
+			§ Supports Backup and Restore
+				□ Cache can be restores to previous state after a failure
+			§ Transactions:
+				□ Treat multiple operations as one (all operations work or none do)
+		○ Both:
+			§ Offer sub-millisecond access to data
+			§ Support a range of programming languages
+	
+### Redshift Architecture
+	• Redshift is a column based, petabyte scale, data warehousing product within AWS
+	• It's designed for OLTP products within AWS/on-premises to add data to for long term processing, aggregation and tending.
+	• Petabyte-scale Data warehouse
+		○ Location where many different operational databases from across a business can pump data into for long-term analysis and trending
+		○ Designed for reporting and analytics
+		○ Not for operational
+	• Online Analytical Processing OLAP (Column based)
+		○ Designed for complex queries to analyze aggregated historical data from OLTP systems
+			§ OLTP puts data into OLAP for more detailed, long-term analysis and trending
+	• NOT Online Transaction Processing OLTP (row-transaction)
+		○ Captures and stores data from transactions in real time
+		○ Ex. Used for adding orders for online store
+		○ Inserts, modifies, deletes
+	• Redshift stores data in Columns
+	• Delivered as a service like RDS
+		○ Quick to provision
+		○ Pay as you use
+	• Direct Query S3 using Redshift Spectrum
+		○ Don't need to load S3 in advance
+		○ Need Redshift Cluster
+	• Direct Query other DBs using federated query
+		○ Can query data stored in remote data sources
+	• Integrates with AWS tooling such as Quicksight
+	• SQL-like interface JDBC/ODBC connections
+	• Architecture:
+		○ Server based (not serverless)
+		○ Not normally used with Ad-Hoc queries for large-scale datasets on S3
+			§ Look to Athena
+		○ Uses cluster architecture on private network
+			§ Runs with multiple nodes
+		○ One AZ in a VPC
+			§ Not HA by design
+			§ Network cost/performance
+		○ Leader Node - Query input, planning, and aggregation
+			§ Manages communications with client programs and the compute nodes
+			§ Develops execution plans to carry out complex queries
+			§ Manages distributing data to the slices
+		○ Compute Node - performing queries of data
+			§ Queries assigned by Leader Node
+			§ Partitioned into slices that are allocated a portion of the nodes memory and disk space
+				□ Slices work in parallel to complete the operation
+				□ Could have 2, 4, 16, or 32 slices
+		○ VPC Service:
+			§ VPC Security controls, IAM Permissions, KMS at rest encryption, CloudWatch monitoring
+		○ Redshift Enhanced VPC Routing - VPC Networking
+			§ Default - Redshift uses public routes for traffic when communicating with external services or any AWS services such as S3 when it's loading in data
+			§ Traffic routed based on VPC networking configuration
+				□ Can be controlled by Security Groups, NACLs
+			§ Any customized networking requirements MUST enable VPC Routing
+	• Anything outside of the cluster connects to leader node in order to interact with the cluster
+		○ Connect with standard JDBC / ODBC compatible applications and visualization suites
+		○ Supports most standard applications
+			§ e.g. SQL Workbench
+	• Data is replicated to 1 additional node when written
+		○ System can cope with hardware failure
+	• Automatic snapshots to S3 (every 8 hours or 5GB) with retention
+	• Manual snapshots to S3 - managed by administrator
+		○ Must manage retention
+	• These automatic and manual snapshots offer regional resilience
+	• Can configure snapshots to be automatically copied across AWS regions - provides global resilience and allows you to create another Redshift cluster in another region
+		○ Snapshots configured to copy to another AWS region
+		○ Good for DR event
+	• Can load/unload data from S3, copy from DynamoDB, migrate data into Redshift using DMS, or stream data using Kinesis Firehose
+	
+### Redshift Disaster Recovery (DR) and Resilience
+	• Redshift runs from only one Availability Zone
+		○ If that AZ fails, the entire cluster will fail
+	• Can utilize S3 for backups in the form of Snapshots
+		○ Automatic incremental backups occur every ~8 hours or 5GB of data and by default have a 1-day retention
+			§ Configurable up to 35 days
+		○ Manual snaps can be taken at any time and deleted by an admin as required
+	• Redshift not resilient across AZs but the data managed by Redshift can be with these backups
+		○ Redshift backups into S3 protect against AZ failures
+	• Redshift can be configured to copy snapshots to another region for DR with a separate configurable retention period
+		○ Regional resilience
