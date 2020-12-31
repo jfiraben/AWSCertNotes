@@ -1,4 +1,3 @@
-# Test
 # AWS Certified Solutions Architect – Associate
 # Course Fundamentals and AWS Accounts
 	• IAM is GLOBAL
